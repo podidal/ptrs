@@ -541,7 +541,7 @@ function encodeWAV(samples, format, sampleRate, numChannels, bitDepth) {
     view.setUint16(32, blockAlign, true);
     view.setUint16(34, bitDepth, true);
     writeString(view, 36, 'data');
-    view.setUint32(40, samples.length * bytesPerSecond, true);
+    view.setUint32(40, samples.length * bytesPerSample, true);
     
     // Write audio data
     floatTo16BitPCM(view, 44, samples);

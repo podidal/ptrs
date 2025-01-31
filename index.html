@@ -46,7 +46,7 @@
                 </div>
                 <div class="settings-group">
                     <label for="prompt">Context Prompt:</label>
-                    <textarea id="prompt" rows="3">Ви - досвідчений український продавець-консультант. Ваше завдання - професійно та дуже коротко консультувати клієнтів дуже коротко українською мовою.</textarea>
+                    <textarea id="prompt" rows="3">Ви - досвідчений український продавець-консультант. Ваше завдання - професійно та дуже коротко консультувати клієнтів дуже коротко українською мовою. в 3 слова</textarea>
                     <div class="slider-description">Цей контекст визначає роль та поведінку асистента у розмові.</div>
                 </div>
             </div>
@@ -134,27 +134,36 @@
                 </div>
             </div>
             <div class="chat-messages" id="chatMessages"></div>
-            <div class="input-container">
+            <div class="chat-controls">
                 <div class="voice-controls">
-                    <button id="recordButton" onclick="startRecording()">Почати запис</button>
-                    <div class="settings">
-                        <div class="setting-item">
-                            <label for="silenceTimeout">Час тиші (мс):</label>
-                            <input type="number" id="silenceTimeout" min="500" max="10000" step="100" onchange="handleSettingsChange(event)">
-                        </div>
-                        <div class="setting-item">
-                            <label for="maxDuration">Макс. тривалість (мс):</label>
-                            <input type="number" id="maxDuration" min="5000" max="60000" step="1000" onchange="handleSettingsChange(event)">
-                        </div>
+                    <div class="control-panel">
+                        <button id="recordButton" onclick="startRecording()">Почати запис</button>
+                        <div id="status" class="status-text"></div>
+                        <div id="transcript" class="transcript-text"></div>
                     </div>
-                    <div class="logs-section">
-                        <div class="logs-header">
-                            <h3>Логи</h3>
-                            <button onclick="clearLogs()" class="clear-logs-btn">Очистити</button>
+                    <div class="settings-panel">
+                        <h3>Налаштування</h3>
+                        <div class="settings">
+                            <div class="setting-item">
+                                <label for="silenceTimeout">Час тиші (мс):</label>
+                                <input type="number" id="silenceTimeout" min="500" max="10000" step="100" onchange="handleSettingsChange(event)">
+                            </div>
+                            <div class="setting-item">
+                                <label for="maxDuration">Макс. тривалість (мс):</label>
+                                <input type="number" id="maxDuration" min="5000" max="60000" step="1000" onchange="handleSettingsChange(event)">
+                            </div>
                         </div>
-                        <div id="logsContainer" class="logs-container"></div>
                     </div>
                 </div>
+                <div class="logs-section">
+                    <div class="logs-header">
+                        <h3>Логи</h3>
+                        <button onclick="clearLogs()" class="clear-logs-btn">Очистити</button>
+                    </div>
+                    <div id="logsContainer" class="logs-container"></div>
+                </div>
+            </div>
+            <div class="input-container">
                 <input type="text" id="userInput" placeholder="Type your message...">
                 <button id="sendButton" class="send-button">Send</button>
             </div>
