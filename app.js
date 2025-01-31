@@ -1,3 +1,52 @@
+// Logging system
+const logLevels = {
+    DEBUG: 'debug',
+    INFO: 'info',
+    WARN: 'warn',
+    ERROR: 'error'
+};
+
+function addLogEntry(level, message, data = null) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+        timestamp,
+        level,
+        message,
+        data
+    };
+
+    // Add to UI
+    const logsContainer = document.getElementById('logsContainer');
+    if (logsContainer) {
+        const logElement = document.createElement('div');
+        logElement.className = `log-entry log-${level}`;
+        
+        let logText = `[${timestamp}] ${level.toUpperCase()}: ${message}`;
+        if (data) {
+            logText += '\nData: ' + JSON.stringify(data, null, 2);
+        }
+        
+        logElement.textContent = logText;
+        logsContainer.insertBefore(logElement, logsContainer.firstChild);
+        
+        // Limit number of visible logs
+        while (logsContainer.children.length > 50) {
+            logsContainer.removeChild(logsContainer.lastChild);
+        }
+    }
+
+    // Also log to console
+    console[level](message, data || '');
+}
+
+// Clear logs
+function clearLogs() {
+    const logsContainer = document.getElementById('logsContainer');
+    if (logsContainer) {
+        logsContainer.innerHTML = '';
+    }
+}
+
 const chatMessages = document.getElementById('chatMessages');
 const userInput = document.getElementById('userInput');
 const sendButton = document.getElementById('sendButton');
@@ -166,13 +215,59 @@ async function playTextToSpeech(text) {
 let mediaRecorder = null;
 let recordingStream = null;
 
+// Recording settings
+const recordingSettings = {
+    silenceThreshold: 10, // Audio level threshold to detect silence
+    silenceTimeout: 2000, // Time in ms to wait before stopping after silence
+    maxDuration: 30000, // Maximum recording duration in ms
+    sampleRate: 16000, // Audio sample rate
+    channelCount: 1, // Mono audio
+    bitsPerSecond: 128000 // Audio quality
+};
+
+// Save settings to localStorage
+function saveSettings() {
+    localStorage.setItem('recordingSettings', JSON.stringify(recordingSettings));
+}
+
+// Load settings from localStorage
+function loadSettings() {
+    const saved = localStorage.getItem('recordingSettings');
+    if (saved) {
+        Object.assign(recordingSettings, JSON.parse(saved));
+        updateSettingsUI();
+    }
+}
+
+// Update settings UI
+function updateSettingsUI() {
+    const silenceTimeoutInput = document.getElementById('silenceTimeout');
+    const maxDurationInput = document.getElementById('maxDuration');
+    if (silenceTimeoutInput) silenceTimeoutInput.value = recordingSettings.silenceTimeout;
+    if (maxDurationInput) maxDurationInput.value = recordingSettings.maxDuration;
+}
+
+// Handle settings change
+function handleSettingsChange(event) {
+    const { id, value } = event.target;
+    recordingSettings[id] = parseInt(value, 10);
+    saveSettings();
+}
+
 // Handle audio transcription
 async function handleTranscription(audioBlob) {
     try {
+        addLogEntry(logLevels.INFO, 'Preparing audio for transcription', {
+            size: audioBlob.size,
+            type: audioBlob.type
+        });
+
         const formData = new FormData();
         formData.append('file', audioBlob, 'audio.wav');
         formData.append('model', 'whisper-large-v3');
         formData.append('language', 'uk');
+        
+        addLogEntry(logLevels.INFO, 'Sending request to Groq API');
         
         const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
             method: 'POST',
@@ -184,14 +279,15 @@ async function handleTranscription(audioBlob) {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.error('Transcription API Error:', errorData);
+            addLogEntry(logLevels.ERROR, 'Transcription API Error', errorData);
             throw new Error(errorData.error?.message || 'Помилка транскрипції');
         }
 
         const data = await response.json();
+        addLogEntry(logLevels.INFO, 'Received transcription', { text: data.text });
         return data.text;
     } catch (error) {
-        console.error('Transcription error:', error);
+        addLogEntry(logLevels.ERROR, 'Transcription error', { message: error.message });
         updateStatus('Помилка транскрипції: ' + error.message);
         throw error;
     }
@@ -202,34 +298,44 @@ async function startRecording() {
     try {
         // If already recording, stop it
         if (mediaRecorder && mediaRecorder.state === 'recording') {
+            addLogEntry(logLevels.INFO, 'Stopping current recording');
             stopRecording();
             return;
         }
+
+        addLogEntry(logLevels.INFO, 'Starting new recording');
 
         // Check supported MIME types
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
             ? 'audio/webm;codecs=opus'
             : 'audio/webm';
+            
+        addLogEntry(logLevels.DEBUG, 'Using MIME type', { mimeType });
 
         // Request microphone access with specific constraints
         recordingStream = await navigator.mediaDevices.getUserMedia({
             audio: {
-                channelCount: 1,
-                sampleRate: 16000,
+                channelCount: recordingSettings.channelCount,
+                sampleRate: recordingSettings.sampleRate,
                 echoCancellation: true,
                 noiseSuppression: true
             }
         });
+        
+        addLogEntry(logLevels.INFO, 'Microphone access granted', {
+            sampleRate: recordingSettings.sampleRate,
+            channelCount: recordingSettings.channelCount
+        });
 
         // Create audio context for processing
         const audioContext = new AudioContext({
-            sampleRate: 16000
+            sampleRate: recordingSettings.sampleRate
         });
         
         // Create media recorder
         mediaRecorder = new MediaRecorder(recordingStream, {
             mimeType: mimeType,
-            audioBitsPerSecond: 128000
+            audioBitsPerSecond: recordingSettings.bitsPerSecond
         });
 
         const audioChunks = [];
@@ -239,14 +345,24 @@ async function startRecording() {
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 audioChunks.push(event.data);
+                addLogEntry(logLevels.DEBUG, 'Audio chunk received', { 
+                    size: event.data.size,
+                    chunks: audioChunks.length
+                });
             }
         };
 
         // Handle recording stop
         mediaRecorder.onstop = async () => {
             try {
+                addLogEntry(logLevels.INFO, 'Recording stopped, processing audio');
+                
                 // Create audio blob
                 const audioBlob = new Blob(audioChunks, { type: mimeType });
+                addLogEntry(logLevels.DEBUG, 'Audio blob created', { 
+                    size: audioBlob.size,
+                    type: audioBlob.type
+                });
                 
                 updateStatus('Обробка аудіо...');
 
@@ -254,9 +370,19 @@ async function startRecording() {
                 const arrayBuffer = await audioBlob.arrayBuffer();
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 
+                addLogEntry(logLevels.DEBUG, 'Audio decoded', {
+                    duration: audioBuffer.duration,
+                    sampleRate: audioBuffer.sampleRate,
+                    channels: audioBuffer.numberOfChannels
+                });
+                
                 // Create WAV buffer
                 const wavBuffer = audioBufferToWav(audioBuffer);
                 const wavBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+                
+                addLogEntry(logLevels.INFO, 'Audio converted to WAV', {
+                    size: wavBlob.size
+                });
                 
                 updateStatus('Транскрибування...');
                 
@@ -264,6 +390,7 @@ async function startRecording() {
                 const transcript = await handleTranscription(wavBlob);
                 
                 if (transcript) {
+                    addLogEntry(logLevels.INFO, 'Transcription successful');
                     // Update UI with transcript
                     updateTranscript(transcript, true);
                     
@@ -271,7 +398,9 @@ async function startRecording() {
                     await handleChat(transcript);
                 }
             } catch (error) {
-                console.error('Processing error:', error);
+                addLogEntry(logLevels.ERROR, 'Processing error', { 
+                    message: error.message 
+                });
                 updateStatus('Помилка обробки: ' + error.message);
             } finally {
                 // Clean up resources
@@ -283,6 +412,8 @@ async function startRecording() {
                 isRecording = false;
                 mediaRecorder = null;
                 
+                addLogEntry(logLevels.INFO, 'Resources cleaned up');
+                
                 // Update button text
                 const recordButton = document.getElementById('recordButton');
                 if (recordButton) {
@@ -290,7 +421,7 @@ async function startRecording() {
                 }
             }
         };
-
+        
         // Start recording
         mediaRecorder.start(1000); // Collect data every second
         updateStatus('Говоріть...');
@@ -318,10 +449,10 @@ async function startRecording() {
             analyser.getByteFrequencyData(dataArray);
             const average = dataArray.reduce((a, b) => a + b) / bufferLength;
             
-            if (average < 10) { // Silence threshold
+            if (average < recordingSettings.silenceThreshold) {
                 if (!silenceStart) {
                     silenceStart = Date.now();
-                } else if (Date.now() - silenceStart > 2000) { // 2 seconds of silence
+                } else if (Date.now() - silenceStart > recordingSettings.silenceTimeout) {
                     stopRecording();
                     return;
                 }
@@ -339,7 +470,7 @@ async function startRecording() {
             if (mediaRecorder && mediaRecorder.state === 'recording') {
                 stopRecording();
             }
-        }, 30000);
+        }, recordingSettings.maxDuration);
 
     } catch (error) {
         console.error('Recording error:', error);
@@ -410,7 +541,7 @@ function encodeWAV(samples, format, sampleRate, numChannels, bitDepth) {
     view.setUint16(32, blockAlign, true);
     view.setUint16(34, bitDepth, true);
     writeString(view, 36, 'data');
-    view.setUint32(40, samples.length * bytesPerSample, true);
+    view.setUint32(40, samples.length * bytesPerSecond, true);
     
     // Write audio data
     floatTo16BitPCM(view, 44, samples);
